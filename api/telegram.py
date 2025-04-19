@@ -1,12 +1,13 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
 from pytz import timezone
 import bleach, os, json
 
 app = Flask(__name__)
-DATA_FILE = os.path.join(os.path.dirname(__file__), '../messages.json')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, '../messages.json')
 
-# 确保 messages.json 文件存在
+# 确保文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
@@ -39,9 +40,8 @@ def export_html():
 
 @app.route('/api/index', methods=['GET'])
 def index():
-    index_path = os.path.join(os.path.dirname(__file__), '../index.html')
-    return send_file(index_path)
+    return send_from_directory(directory=os.path.join(BASE_DIR, '..'), path='index.html')
 
-# ✅ Vercel 需要的 WSGI 入口（不依赖 vercel-wsgi）
+# WSGI entry point for Vercel
 def handler(environ, start_response):
     return app.wsgi_app(environ, start_response)
