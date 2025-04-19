@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, send_file
 from datetime import datetime
 from pytz import timezone
-import bleach, os, json
+import bleach, os, json, sys, traceback
 import redis
 from urllib.parse import urlparse
 
@@ -9,59 +9,91 @@ app = Flask(__name__)
 
 # 配置 Redis 连接
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-url = urlparse(redis_url)
-redis_client = redis.Redis(
-    host=url.hostname,
-    port=url.port,
-    password=url.password,
-    ssl=True if url.scheme == 'rediss' else False
-)
+print(f"Redis URL (masked): {redis_url[:10]}...{redis_url[-10:]}")  # 安全地打印 URL
+
+try:
+    url = urlparse(redis_url)
+    redis_client = redis.Redis(
+        host=url.hostname,
+        port=url.port,
+        password=url.password,
+        ssl=True if url.scheme == 'rediss' else False,
+        decode_responses=True  # 自动解码响应
+    )
+    # 测试连接
+    redis_client.ping()
+    print("Redis connection successful")
+except Exception as e:
+    print(f"Redis connection error: {str(e)}")
+    print(f"Traceback: {traceback.format_exc()}")
+    redis_client = None
 
 def get_messages():
     try:
+        if not redis_client:
+            print("Redis client not available")
+            return []
         messages = redis_client.lrange('messages', 0, -1)
-        return [json.loads(m.decode('utf-8')) for m in messages]
+        return [json.loads(m) for m in messages]
     except Exception as e:
         print(f"Error getting messages: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         return []
 
 def save_message(message):
     try:
+        if not redis_client:
+            print("Redis client not available")
+            return False
         redis_client.lpush('messages', json.dumps(message))
         redis_client.ltrim('messages', 0, 99)  # 只保留最新的100条消息
+        return True
     except Exception as e:
         print(f"Error saving message: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return False
 
 @app.route('/telegram', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.get_json()
-        print(f"Received webhook data: {json.dumps(data)}")  # 调试日志
+        print(f"Received webhook data: {json.dumps(data)}")
         
         text = data.get('message', {}).get('text', '')
+        chat_id = data.get('message', {}).get('chat', {}).get('id')
+        print(f"Extracted text: {text}, chat_id: {chat_id}")
+        
         if text:
             text = bleach.linkify(text)
             timestamp = datetime.now(timezone('America/Chicago')).strftime('%Y-%m-%d %H:%M')
-            new_msg = {"text": text, "timestamp": timestamp}
-            save_message(new_msg)
-            print(f"Saved message: {json.dumps(new_msg)}")  # 调试日志
+            new_msg = {
+                "text": text,
+                "timestamp": timestamp,
+                "chat_id": chat_id
+            }
+            if save_message(new_msg):
+                print(f"Successfully saved message: {json.dumps(new_msg)}")
+            else:
+                print("Failed to save message")
         return jsonify({"status": "ok"})
     except Exception as e:
-        print(f"Error in webhook: {str(e)}")  # 调试日志
-        return jsonify({"error": str(e)}), 500
+        error_msg = f"Error in webhook: {str(e)}\nTraceback: {traceback.format_exc()}"
+        print(error_msg)
+        return jsonify({"error": error_msg}), 500
 
 @app.route('/export', methods=['GET'])
 def export_html():
     try:
         messages = get_messages()
-        print(f"Retrieved {len(messages)} messages")  # 调试日志
+        print(f"Retrieved {len(messages)} messages")
         html = ""
         for msg in messages:
-            html += f'<p>{msg["text"]} <span style="color:gray; font-size:0.9em;">{msg["timestamp"]}</span></p>\n'
+            html += f'<div class="message"><p>{msg["text"]}</p><div class="timestamp">{msg["timestamp"]}</div></div>\n'
         return html
     except Exception as e:
-        print(f"Error in export: {str(e)}")  # 调试日志
-        return str(e), 500
+        error_msg = f"Error in export: {str(e)}\nTraceback: {traceback.format_exc()}"
+        print(error_msg)
+        return error_msg, 500
 
 @app.route('/', methods=['GET'])
 def index():
@@ -104,28 +136,45 @@ def index():
                     margin-top: 20px;
                     font-style: italic;
                 }
+                #error {
+                    color: #ff4444;
+                    text-align: center;
+                    margin-top: 20px;
+                    display: none;
+                }
             </style>
         </head>
         <body>
             <h1>Messages</h1>
             <div id="messages"></div>
             <div id="status">Loading messages...</div>
+            <div id="error"></div>
             <script>
                 function loadMessages() {
                     fetch('/export')
-                        .then(response => response.text())
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            return response.text();
+                        })
                         .then(html => {
                             document.getElementById('messages').innerHTML = html;
                             const status = document.getElementById('status');
+                            const error = document.getElementById('error');
                             if (html.trim() === '') {
                                 status.textContent = 'No messages yet';
+                                status.style.display = 'block';
                             } else {
                                 status.style.display = 'none';
                             }
+                            error.style.display = 'none';
                         })
                         .catch(error => {
                             console.error('Error loading messages:', error);
-                            document.getElementById('status').textContent = 'Error loading messages';
+                            document.getElementById('error').textContent = 'Error loading messages: ' + error.message;
+                            document.getElementById('error').style.display = 'block';
+                            document.getElementById('status').style.display = 'none';
                         });
                 }
                 loadMessages();
@@ -135,8 +184,23 @@ def index():
         </html>
         """
     except Exception as e:
-        print(f"Error in index: {str(e)}")  # 调试日志
-        return str(e), 500
+        error_msg = f"Error in index: {str(e)}\nTraceback: {traceback.format_exc()}"
+        print(error_msg)
+        return error_msg, 500
+
+@app.route('/debug', methods=['GET'])
+def debug():
+    """Debug endpoint to check environment and configuration"""
+    try:
+        info = {
+            'env_vars': {k: v for k, v in os.environ.items() if not k.lower().contains('key') and not k.lower().contains('secret') and not k.lower().contains('password')},
+            'redis_connected': redis_client is not None and redis_client.ping() if redis_client else False,
+            'python_version': sys.version,
+            'message_count': len(get_messages())
+        }
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 def handler(environ, start_response):
     return app.wsgi_app(environ, start_response)
