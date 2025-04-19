@@ -4,13 +4,14 @@ from pytz import timezone
 import bleach, os, json
 
 app = Flask(__name__)
-DATA_FILE = os.path.join(os.path.dirname(__file__), 'messages.json')
+DATA_FILE = os.path.join(os.path.dirname(__file__), '../messages.json')
 
+# 如果数据文件不存在则创建
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
 
-@app.route('/telegram', methods=['POST'])
+@app.route('/api/telegram', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
     text = data.get('message', {}).get('text', '')
@@ -26,7 +27,7 @@ def telegram_webhook():
             f.truncate()
     return jsonify({"status": "ok"})
 
-@app.route('/export', methods=['GET'])
+@app.route('/api/export', methods=['GET'])
 def export_html():
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
         messages = json.load(f)
@@ -35,10 +36,10 @@ def export_html():
         html += f'<p>{msg["text"]} <span style="color:gray; font-size:0.9em;">{msg["timestamp"]}</span></p>\n'
     return html
 
-@app.route('/', methods=['GET'])
+@app.route('/api/', methods=['GET'])
 def index():
-    return send_file('index.html')
+    return send_file('../index.html')
 
-# Vercel 入口
+# ✅ Vercel Serverless 函数入口
 def handler(environ, start_response):
     return app.wsgi_app(environ, start_response)
