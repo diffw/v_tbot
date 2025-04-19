@@ -4,18 +4,13 @@ from pytz import timezone
 import bleach, os, json
 
 app = Flask(__name__)
+DATA_FILE = os.path.join(os.path.dirname(__file__), 'messages.json')
 
-# 使用绝对路径以兼容 Vercel Serverless 文件系统
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, '..', 'messages.json')
-HTML_FILE = os.path.join(BASE_DIR, '..', 'index.html')
-
-# 确保 messages.json 文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
 
-@app.route('/api/telegram', methods=['POST'])
+@app.route('/telegram', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
     text = data.get('message', {}).get('text', '')
@@ -23,7 +18,6 @@ def telegram_webhook():
         text = bleach.linkify(text)
         timestamp = datetime.now(timezone('America/Chicago')).strftime('%Y-%m-%d %H:%M')
         new_msg = {"text": text, "timestamp": timestamp}
-
         with open(DATA_FILE, 'r+', encoding='utf-8') as f:
             messages = json.load(f)
             messages.insert(0, new_msg)
@@ -32,8 +26,7 @@ def telegram_webhook():
             f.truncate()
     return jsonify({"status": "ok"})
 
-
-@app.route('/api/export', methods=['GET'])
+@app.route('/export', methods=['GET'])
 def export_html():
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
         messages = json.load(f)
@@ -42,11 +35,10 @@ def export_html():
         html += f'<p>{msg["text"]} <span style="color:gray; font-size:0.9em;">{msg["timestamp"]}</span></p>\n'
     return html
 
-
-@app.route('/api/index', methods=['GET'])
+@app.route('/', methods=['GET'])
 def index():
-    return send_file(HTML_FILE)
+    return send_file('index.html')
 
-# ✅ Vercel 需要的 Serverless 入口函数
+# Vercel 入口
 def handler(environ, start_response):
     return app.wsgi_app(environ, start_response)
