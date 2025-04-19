@@ -10,10 +10,9 @@ app = Flask(__name__)
 # 配置 Redis 连接
 def get_redis_client():
     try:
-        # 尝试多个可能的环境变量名
-        redis_url = os.getenv('KV_REST_API_URL') or os.getenv('REDIS_URL') or os.getenv('KV_URL')
+        redis_url = os.getenv('REDIS_URL')
         if not redis_url:
-            print("No Redis URL found in environment variables")
+            print("REDIS_URL environment variable not found")
             return None
             
         print("Attempting to connect to Redis...")
