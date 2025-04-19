@@ -8,25 +8,24 @@ from urllib.parse import urlparse
 app = Flask(__name__)
 
 # 配置 Redis 连接
-redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-print(f"Redis URL (masked): {redis_url[:10]}...{redis_url[-10:]}")  # 安全地打印 URL
+def get_redis_client():
+    try:
+        redis_url = os.getenv('KV_URL')
+        if not redis_url:
+            print("No KV_URL environment variable found")
+            return None
+            
+        print(f"Connecting to Redis... (URL masked for security)")
+        client = redis.from_url(redis_url, decode_responses=True)
+        client.ping()  # 测试连接
+        print("Redis connection successful")
+        return client
+    except Exception as e:
+        print(f"Redis connection error: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return None
 
-try:
-    url = urlparse(redis_url)
-    redis_client = redis.Redis(
-        host=url.hostname,
-        port=url.port,
-        password=url.password,
-        ssl=True if url.scheme == 'rediss' else False,
-        decode_responses=True  # 自动解码响应
-    )
-    # 测试连接
-    redis_client.ping()
-    print("Redis connection successful")
-except Exception as e:
-    print(f"Redis connection error: {str(e)}")
-    print(f"Traceback: {traceback.format_exc()}")
-    redis_client = None
+redis_client = get_redis_client()
 
 def get_messages():
     try:
@@ -34,7 +33,7 @@ def get_messages():
             print("Redis client not available")
             return []
         messages = redis_client.lrange('messages', 0, -1)
-        return [json.loads(m) for m in messages]
+        return [json.loads(m) for m in messages] if messages else []
     except Exception as e:
         print(f"Error getting messages: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
@@ -86,6 +85,8 @@ def export_html():
     try:
         messages = get_messages()
         print(f"Retrieved {len(messages)} messages")
+        if not messages:
+            return '<div class="message">No messages yet</div>'
         html = ""
         for msg in messages:
             html += f'<div class="message"><p>{msg["text"]}</p><div class="timestamp">{msg["timestamp"]}</div></div>\n'
