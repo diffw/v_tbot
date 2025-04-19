@@ -1,14 +1,14 @@
 {
   "builds": [
     {
-      "src": "telegram.py",
+      "src": "index.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "telegram.py"
+      "dest": "index.py"
     }
   ]
 }

@@ -13,7 +13,7 @@
   <div id="messages">Loading...</div>
 
   <script>
-    fetch('/api/export')
+    fetch('/export')  <!-- ✅ 路径改了 -->
       .then(res => res.text())
       .then(html => {
         document.getElementById('messages').innerHTML = html;
