@@ -11,7 +11,7 @@ if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
 
-@app.route('/api/telegram', methods=['POST'])
+@app.route('/telegram', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
     text = data.get('message', {}).get('text', '')
@@ -27,7 +27,7 @@ def telegram_webhook():
             f.truncate()
     return jsonify({"status": "ok"})
 
-@app.route('/api/export', methods=['GET'])
+@app.route('/export', methods=['GET'])
 def export_html():
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
         messages = json.load(f)
@@ -36,7 +36,7 @@ def export_html():
         html += f'<p>{msg["text"]} <span style="color:gray; font-size:0.9em;">{msg["timestamp"]}</span></p>\n'
     return html
 
-@app.route('/api/', methods=['GET'])
+@app.route('/', methods=['GET'])
 def index():
     return send_file('../index.html')
 
