@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>My Telegram Feed</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2em auto; line-height: 1.6; }
+    .timestamp { color: gray; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>📝 Telegram Feed</h1>
+  <div id="messages">Loading...</div>
+
+  <script>
+    fetch('/api/export')
+      .then(res => res.text())
+      .then(html => {
+        document.getElementById('messages').innerHTML = html;
+      })
+      .catch(err => {
+        document.getElementById('messages').textContent = 'Failed to load messages.';
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
