@@ -14,33 +14,42 @@ app = Flask(__name__)
 
 def get_redis_client():
     try:
-        redis_url = os.getenv('REDIS_URL')
-        logger.info(f"Redis URL found: {'yes' if redis_url else 'no'}")
+        # 获取 Vercel KV 环境变量
+        kv_url = os.getenv('KV_REST_API_URL')
+        kv_token = os.getenv('KV_REST_API_TOKEN')
+        kv_timeout = os.getenv('KV_REST_API_TIMEOUT', '3000')
         
-        if not redis_url:
-            logger.error("REDIS_URL environment variable not found")
+        logger.info("Checking KV environment variables...")
+        logger.info(f"KV_REST_API_URL exists: {'yes' if kv_url else 'no'}")
+        logger.info(f"KV_REST_API_TOKEN exists: {'yes' if kv_token else 'no'}")
+        
+        if not (kv_url and kv_token):
+            logger.error("Missing required KV environment variables")
             return None
             
-        # 解析 Redis URL
-        parsed_url = urlparse(redis_url)
-        logger.info(f"Redis connection details: scheme={parsed_url.scheme}, host={parsed_url.hostname}, port={parsed_url.port}")
+        # 解析 URL
+        parsed = urlparse(kv_url)
+        logger.info(f"Parsed URL - scheme: {parsed.scheme}, host: {parsed.hostname}")
         
+        # 创建 Redis 客户端
         client = redis.Redis(
-            host=parsed_url.hostname,
-            port=parsed_url.port,
-            password=parsed_url.password,
-            ssl=parsed_url.scheme == 'rediss',
+            host=parsed.hostname,
+            port=parsed.port or 6379,
+            username=parsed.username,
+            password=kv_token,  # 使用 token 作为密码
+            ssl=True,
+            ssl_cert_reqs=None,  # 禁用证书验证
             decode_responses=True,
-            socket_timeout=5,
-            socket_connect_timeout=5
+            socket_timeout=float(kv_timeout) / 1000,
+            socket_connect_timeout=float(kv_timeout) / 1000
         )
         
         # 测试连接
         client.ping()
-        logger.info("Redis connection successful")
+        logger.info("Successfully connected to Vercel KV")
         return client
     except Exception as e:
-        logger.error(f"Redis connection error: {str(e)}")
+        logger.error(f"Failed to connect to Vercel KV: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
@@ -214,9 +223,13 @@ def index():
 def debug():
     """Debug endpoint to check environment and configuration"""
     try:
-        # 获取所有环境变量（排除敏感信息）
-        env_vars = {k: '***' if any(s in k.lower() for s in ['key', 'secret', 'password', 'token', 'url']) 
-                   else v for k, v in os.environ.items()}
+        # 获取环境变量（排除敏感信息）
+        env_vars = {}
+        for k, v in os.environ.items():
+            if any(s in k.lower() for s in ['key', 'secret', 'password', 'token', 'url']):
+                env_vars[k] = '***'
+            else:
+                env_vars[k] = v
         
         # 测试 Redis 连接
         redis_status = False
@@ -228,12 +241,26 @@ def debug():
             except Exception as e:
                 redis_error = str(e)
         
+        # 获取 Redis 信息
+        redis_info = None
+        if redis_status:
+            try:
+                info = redis_client.info()
+                redis_info = {
+                    'version': info.get('redis_version'),
+                    'connected_clients': info.get('connected_clients'),
+                    'used_memory_human': info.get('used_memory_human')
+                }
+            except:
+                redis_info = "Failed to get Redis info"
+        
         info = {
             'env_vars': env_vars,
             'redis_connected': redis_status,
             'redis_error': redis_error,
+            'redis_info': redis_info,
             'python_version': sys.version,
-            'message_count': len(get_messages())
+            'message_count': len(get_messages()) if redis_status else None
         }
         logger.info(f"Debug info: {json.dumps(info, indent=2)}")
         return jsonify(info)
