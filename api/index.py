@@ -10,14 +10,22 @@ app = Flask(__name__)
 # 配置 Redis 连接
 def get_redis_client():
     try:
-        redis_url = os.getenv('KV_URL')
+        # 尝试多个可能的环境变量名
+        redis_url = os.getenv('KV_REST_API_URL') or os.getenv('REDIS_URL') or os.getenv('KV_URL')
         if not redis_url:
-            print("No KV_URL environment variable found")
+            print("No Redis URL found in environment variables")
             return None
             
-        print(f"Connecting to Redis... (URL masked for security)")
-        client = redis.from_url(redis_url, decode_responses=True)
-        client.ping()  # 测试连接
+        print("Attempting to connect to Redis...")
+        client = redis.from_url(
+            redis_url,
+            decode_responses=True,
+            retry_on_timeout=True,
+            socket_timeout=5,
+            socket_connect_timeout=5
+        )
+        # 测试连接
+        client.ping()
         print("Redis connection successful")
         return client
     except Exception as e:
