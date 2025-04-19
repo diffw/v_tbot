@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify, send_file
 from datetime import datetime
 from pytz import timezone
 import bleach, os, json
-from vercel_wsgi import handle_request  # ✅ 用于适配 Vercel Serverless
 
 app = Flask(__name__)
 DATA_FILE = os.path.join(os.path.dirname(__file__), '../messages.json')
@@ -44,6 +43,6 @@ def export_html():
 def index():
     return send_file('../index.html')
 
-# ✅ Vercel 用的入口点
+# ✅ Vercel 需要的 WSGI 入口（不依赖 vercel-wsgi）
 def handler(environ, start_response):
-    return handle_request(app, environ, start_response)
+    return app.wsgi_app(environ, start_response)
