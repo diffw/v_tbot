@@ -4,9 +4,8 @@ from pytz import timezone
 import bleach, os, json
 
 app = Flask(__name__)
-DATA_FILE = os.path.join(os.path.dirname(__file__), 'messages.json')
+DATA_FILE = os.path.join(os.path.dirname(__file__), '..', 'messages.json')
 
-# 确保文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
@@ -33,13 +32,12 @@ def export_html():
         messages = json.load(f)
     html = ""
     for msg in messages:
-        html += f'<p>{msg["text"]} <span class="timestamp">{msg["timestamp"]}</span></p>\n'
+        html += f'<p>{msg["text"]} <span style="color:gray; font-size:0.9em;">{msg["timestamp"]}</span></p>\n'
     return html
 
 @app.route('/', methods=['GET'])
 def index():
-    return send_file('index.html')
+    return send_file(os.path.join(os.path.dirname(__file__), '..', 'index.html'))
 
-# ✅ 这是关键：Vercel 的入口点
 def handler(environ, start_response):
     return app.wsgi_app(environ, start_response)
