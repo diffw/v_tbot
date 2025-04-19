@@ -1,13 +1,16 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_file
 from datetime import datetime
 from pytz import timezone
 import bleach, os, json
 
 app = Flask(__name__)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, '../messages.json')
 
-# 确保文件存在
+# 使用绝对路径以兼容 Vercel Serverless 文件系统
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, '..', 'messages.json')
+HTML_FILE = os.path.join(BASE_DIR, '..', 'index.html')
+
+# 确保 messages.json 文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
@@ -29,6 +32,7 @@ def telegram_webhook():
             f.truncate()
     return jsonify({"status": "ok"})
 
+
 @app.route('/api/export', methods=['GET'])
 def export_html():
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
@@ -38,10 +42,11 @@ def export_html():
         html += f'<p>{msg["text"]} <span style="color:gray; font-size:0.9em;">{msg["timestamp"]}</span></p>\n'
     return html
 
+
 @app.route('/api/index', methods=['GET'])
 def index():
-    return send_from_directory(directory=os.path.join(BASE_DIR, '..'), path='index.html')
+    return send_file(HTML_FILE)
 
-# WSGI entry point for Vercel
+# ✅ Vercel 需要的 Serverless 入口函数
 def handler(environ, start_response):
     return app.wsgi_app(environ, start_response)
