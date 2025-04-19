@@ -4,32 +4,44 @@ from pytz import timezone
 import bleach, os, json, sys, traceback
 import redis
 from urllib.parse import urlparse
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# 配置 Redis 连接
 def get_redis_client():
     try:
         redis_url = os.getenv('REDIS_URL')
+        logger.info(f"Redis URL found: {'yes' if redis_url else 'no'}")
+        
         if not redis_url:
-            print("REDIS_URL environment variable not found")
+            logger.error("REDIS_URL environment variable not found")
             return None
             
-        print("Attempting to connect to Redis...")
-        client = redis.from_url(
-            redis_url,
+        # 解析 Redis URL
+        parsed_url = urlparse(redis_url)
+        logger.info(f"Redis connection details: scheme={parsed_url.scheme}, host={parsed_url.hostname}, port={parsed_url.port}")
+        
+        client = redis.Redis(
+            host=parsed_url.hostname,
+            port=parsed_url.port,
+            password=parsed_url.password,
+            ssl=parsed_url.scheme == 'rediss',
             decode_responses=True,
-            retry_on_timeout=True,
             socket_timeout=5,
             socket_connect_timeout=5
         )
+        
         # 测试连接
         client.ping()
-        print("Redis connection successful")
+        logger.info("Redis connection successful")
         return client
     except Exception as e:
-        print(f"Redis connection error: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Redis connection error: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 redis_client = get_redis_client()
@@ -37,37 +49,39 @@ redis_client = get_redis_client()
 def get_messages():
     try:
         if not redis_client:
-            print("Redis client not available")
+            logger.error("Redis client not available")
             return []
         messages = redis_client.lrange('messages', 0, -1)
+        logger.info(f"Retrieved {len(messages)} messages from Redis")
         return [json.loads(m) for m in messages] if messages else []
     except Exception as e:
-        print(f"Error getting messages: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Error getting messages: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return []
 
 def save_message(message):
     try:
         if not redis_client:
-            print("Redis client not available")
+            logger.error("Redis client not available")
             return False
         redis_client.lpush('messages', json.dumps(message))
         redis_client.ltrim('messages', 0, 99)  # 只保留最新的100条消息
+        logger.info("Message saved successfully")
         return True
     except Exception as e:
-        print(f"Error saving message: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Error saving message: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return False
 
 @app.route('/telegram', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.get_json()
-        print(f"Received webhook data: {json.dumps(data)}")
+        logger.info(f"Received webhook data: {json.dumps(data)}")
         
         text = data.get('message', {}).get('text', '')
         chat_id = data.get('message', {}).get('chat', {}).get('id')
-        print(f"Extracted text: {text}, chat_id: {chat_id}")
+        logger.info(f"Extracted text: {text}, chat_id: {chat_id}")
         
         if text:
             text = bleach.linkify(text)
@@ -78,20 +92,20 @@ def telegram_webhook():
                 "chat_id": chat_id
             }
             if save_message(new_msg):
-                print(f"Successfully saved message: {json.dumps(new_msg)}")
+                logger.info(f"Successfully saved message: {json.dumps(new_msg)}")
             else:
-                print("Failed to save message")
+                logger.error("Failed to save message")
         return jsonify({"status": "ok"})
     except Exception as e:
         error_msg = f"Error in webhook: {str(e)}\nTraceback: {traceback.format_exc()}"
-        print(error_msg)
+        logger.error(error_msg)
         return jsonify({"error": error_msg}), 500
 
 @app.route('/export', methods=['GET'])
 def export_html():
     try:
         messages = get_messages()
-        print(f"Retrieved {len(messages)} messages")
+        logger.info(f"Retrieved {len(messages)} messages")
         if not messages:
             return '<div class="message">No messages yet</div>'
         html = ""
@@ -100,7 +114,7 @@ def export_html():
         return html
     except Exception as e:
         error_msg = f"Error in export: {str(e)}\nTraceback: {traceback.format_exc()}"
-        print(error_msg)
+        logger.error(error_msg)
         return error_msg, 500
 
 @app.route('/', methods=['GET'])
@@ -193,25 +207,40 @@ def index():
         """
     except Exception as e:
         error_msg = f"Error in index: {str(e)}\nTraceback: {traceback.format_exc()}"
-        print(error_msg)
+        logger.error(error_msg)
         return error_msg, 500
 
 @app.route('/debug', methods=['GET'])
 def debug():
     """Debug endpoint to check environment and configuration"""
     try:
+        # 获取所有环境变量（排除敏感信息）
+        env_vars = {k: '***' if any(s in k.lower() for s in ['key', 'secret', 'password', 'token', 'url']) 
+                   else v for k, v in os.environ.items()}
+        
+        # 测试 Redis 连接
+        redis_status = False
+        redis_error = None
+        if redis_client:
+            try:
+                redis_client.ping()
+                redis_status = True
+            except Exception as e:
+                redis_error = str(e)
+        
         info = {
-            'env_vars': {k: v for k, v in os.environ.items() 
-                        if 'key' not in k.lower() 
-                        and 'secret' not in k.lower() 
-                        and 'password' not in k.lower()},
-            'redis_connected': redis_client is not None and redis_client.ping() if redis_client else False,
+            'env_vars': env_vars,
+            'redis_connected': redis_status,
+            'redis_error': redis_error,
             'python_version': sys.version,
             'message_count': len(get_messages())
         }
+        logger.info(f"Debug info: {json.dumps(info, indent=2)}")
         return jsonify(info)
     except Exception as e:
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+        error_info = {'error': str(e), 'traceback': traceback.format_exc()}
+        logger.error(f"Debug endpoint error: {json.dumps(error_info, indent=2)}")
+        return jsonify(error_info), 500
 
 def handler(environ, start_response):
     return app.wsgi_app(environ, start_response)
