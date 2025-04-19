@@ -6,7 +6,7 @@ import bleach, os, json
 app = Flask(__name__)
 DATA_FILE = os.path.join(os.path.dirname(__file__), '../messages.json')
 
-# 确保文件存在
+# 确保 messages.json 文件存在
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
@@ -28,7 +28,6 @@ def telegram_webhook():
             f.truncate()
     return jsonify({"status": "ok"})
 
-
 @app.route('/api/export', methods=['GET'])
 def export_html():
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
@@ -38,10 +37,10 @@ def export_html():
         html += f'<p>{msg["text"]} <span style="color:gray; font-size:0.9em;">{msg["timestamp"]}</span></p>\n'
     return html
 
-
 @app.route('/api/index', methods=['GET'])
 def index():
-    return send_file('../index.html')
+    index_path = os.path.join(os.path.dirname(__file__), '../index.html')
+    return send_file(index_path)
 
 # ✅ Vercel 需要的 WSGI 入口（不依赖 vercel-wsgi）
 def handler(environ, start_response):
