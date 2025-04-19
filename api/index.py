@@ -193,7 +193,10 @@ def debug():
     """Debug endpoint to check environment and configuration"""
     try:
         info = {
-            'env_vars': {k: v for k, v in os.environ.items() if not k.lower().contains('key') and not k.lower().contains('secret') and not k.lower().contains('password')},
+            'env_vars': {k: v for k, v in os.environ.items() 
+                        if 'key' not in k.lower() 
+                        and 'secret' not in k.lower() 
+                        and 'password' not in k.lower()},
             'redis_connected': redis_client is not None and redis_client.ping() if redis_client else False,
             'python_version': sys.version,
             'message_count': len(get_messages())
